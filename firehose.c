@@ -148,9 +148,10 @@ static int firehose_read(struct qdl_device *qdl, int timeout_ms,
 	gettimeofday(&now, NULL);
 	timeradd(&now, &delta, &timeout);
 
-	do {
-		n = qdl_read(qdl, buf, sizeof(buf), 100);
+	for (;;) {
+		n = qdl_read(qdl, buf, sizeof(buf), 1000);
 		if (n < 0) {
+			if(ret != -EAGAIN) break;
 			gettimeofday(&now, NULL);
 			if (timercmp(&now, &timeout, <))
 				continue;
@@ -160,14 +161,22 @@ static int firehose_read(struct qdl_device *qdl, int timeout_ms,
 		buf[n] = '\0';
 
 		ux_debug("FIREHOSE READ: %s\n", buf);
+		
 
 		node = firehose_response_parse(buf, n, &error);
 		if (!node)
 			return error;
 
-		ret = response_parser(node, data);
+		if (xmlStrcmp(node->name, (xmlChar*)"log") == 0) {
+			xmlChar *value;
+			value = xmlGetProp(node, (xmlChar*)"value");
+			ux_log("LOG: %s\n", value);
+		} else {
+			ret = response_parser(node, data);
+		}
+
 		xmlFreeDoc(node->doc);
-	} while (ret == -EAGAIN);
+	}
 
 	return ret;
 }
